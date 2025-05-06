@@ -1,1 +1,1 @@
-# EEG-Motor-Imagery
+# EEG-Motor-Imagery-Based-Game
