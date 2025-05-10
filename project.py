@@ -1,6 +1,4 @@
 """# Libraries"""
-
-
 ## Data manipulation and analysis
 import numpy as np
 import pandas as pd
@@ -20,6 +18,7 @@ from scipy.linalg import eigh
 ## Machine learning
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, classification_report
+from sklearn.svm import SVC
 
 """# parameters"""
 
@@ -77,7 +76,7 @@ print('unique labels count:', data['label'].value_counts())
 ## Encoding
 """
 
-data['label'] = data['label'].map({'right': 1, 'left': 2, 'feet': 3, 'tongue': 4})
+data['label'] = data['label'].map({'right': 1, 'left': 2, 'foot': 3, 'tongue': 4})
 
 """## EEG preprocessing functions
 
@@ -102,14 +101,30 @@ def notch_filter(data, freq=50, fs=250, quality=30):
 X = data.drop('label', axis=1).values
 y = data['label'].values
 
+print("\nInitial class distribution:")
+unique_labels, counts = np.unique(y, return_counts=True)
+for label, count in zip(unique_labels, counts):
+    print(f"Class {label}: {count} samples")
+
 """## Reshape data into trials"""
 
-samples_per_trial = 1000
+samples_per_trial = 100  # Changed from 1000 to 100
 n_trials = X.shape[0] // samples_per_trial
 X = X[:n_trials * samples_per_trial]
 y = y[:n_trials * samples_per_trial]
 y_labels = y[::samples_per_trial]
 X_reshaped = X.reshape(n_trials, samples_per_trial, -1).transpose(0, 2, 1)
+
+print("\nAfter reshaping:")
+print(f"Number of trials: {n_trials}")
+print(f"Samples per trial: {samples_per_trial}")
+print(f"X_reshaped shape: {X_reshaped.shape}")
+print(f"y_labels shape: {y_labels.shape}")
+
+print("\nClass distribution after reshaping:")
+unique_labels, counts = np.unique(y_labels, return_counts=True)
+for label, count in zip(unique_labels, counts):
+    print(f"Class {label}: {count} trials")
 
 """## apply EEG preprocessing"""
 
@@ -117,6 +132,12 @@ print("Applying bandpass filter...")
 filtered_data = bandpass_filter(X_reshaped)
 print("Applying notch filter...")
 filtered_data = notch_filter(filtered_data)
+
+print("\nData shape after preprocessing:", filtered_data.shape)
+print("Class distribution after preprocessing:")
+unique_labels, counts = np.unique(y_labels, return_counts=True)
+for label, count in zip(unique_labels, counts):
+    print(f"Class {label}: {count} trials")
 
 """## remove EOG with PCA"""
 
@@ -141,6 +162,31 @@ for t in range(n_samples):
 print(f"\nPCA data shape: {pca_data.shape}")
 print(f"Total variance explained: {np.sum(pca.explained_variance_ratio_):.2%}")
 
+print("\nData shape after PCA:", pca_data.shape)
+print("Class distribution after PCA:")
+unique_labels, counts = np.unique(y_labels, return_counts=True)
+for label, count in zip(unique_labels, counts):
+    print(f"Class {label}: {count} trials")
+
+"""### Plot PCA components"""
+plt.figure(figsize=(18, 12))
+n_cols = 4
+n_rows = int(np.ceil(n_components_pca / n_cols))
+
+# Plot each PCA component
+for i in range(n_components_pca):
+    plt.subplot(n_rows, n_cols, i+1)
+    # Get the i-th component's time series data
+    component_data = pca_data[:, i, :].flatten()
+    plt.plot(component_data, alpha=0.7)
+    plt.title(f'PCA Component {i+1}\nVar: {pca.explained_variance_ratio_[i]:.2%}', fontsize=8)
+    plt.xticks([])
+    plt.yticks([])
+
+plt.tight_layout()
+plt.suptitle('All PCA Components (Time Series)', y=1.02)
+plt.show()
+
 """## apply ICA"""
 
 print("\nApplying ICA...")
@@ -148,6 +194,12 @@ print("\nApplying ICA...")
 ica_input = pca_data.reshape(n_trials * n_samples, n_components_pca)
 ica = FastICA(n_components=n_components_ica, random_state=42)
 ica_data = ica.fit_transform(ica_input)
+
+print("\nData shape after ICA:", ica_data.shape)
+print("Class distribution after ICA:")
+unique_labels, counts = np.unique(y_labels, return_counts=True)
+for label, count in zip(unique_labels, counts):
+    print(f"Class {label}: {count} trials")
 
 """### plot all ICA components"""
 plt.figure(figsize=(18, 12))
@@ -173,9 +225,9 @@ print(f"ICA data shape after reshaping: {ica_data_reshaped.shape}")
 
 # Verify dimensions
 if ica_data_reshaped.shape[1] == n_components_ica:
-    print("✅ Success! ICA data has exactly 16 components")
+    print("Success! ICA data has exactly 16 components")
 else:
-    print(f"❌ Warning: ICA data has {ica_data_reshaped.shape[1]} components instead of 16")
+    print(f"Warning: ICA data has {ica_data_reshaped.shape[1]} components instead of 16")
 
 # Use ica_data_reshaped for CSP extraction
 cleaned_data = ica_data_reshaped
@@ -183,107 +235,79 @@ cleaned_data = ica_data_reshaped
 """## Extract CSP features"""
 
 print("Extracting CSP features...")
-# Ensure data is in the correct format (trials, channels, samples)
-if cleaned_data.shape[1] != n_channels:
+# Data validation
+print(f"Shape of cleaned_data before any processing: {cleaned_data.shape}")
+print(f"Shape of y_labels: {y_labels.shape}")
+print("Unique values in y_labels before processing:", np.unique(y_labels, return_counts=True))
+
+# Initialize CSP
+csp = CSP(n_components=n_components_csp, reg=None, log=True, norm_trace=False)
+
+# Make sure data is in the correct shape (trials, channels, samples)
+if cleaned_data.shape[1] != n_components_ica:
     cleaned_data = np.transpose(cleaned_data, (0, 2, 1))
 print(f"Data shape before CSP: {cleaned_data.shape}")
 
-"""### Reshape data for CSP"""
+# Verify there are trials for each class
+for class_id in range(1, 5):  # Now checking all 4 classes
+    n_trials = np.sum(y_labels == class_id)
+    print(f"Number of trials for class {class_id}: {n_trials}")
 
-n_trials, n_channels, n_samples = cleaned_data.shape
-data_2d = cleaned_data.reshape(n_trials, n_channels * n_samples)
-print(f"Data shape after reshaping: {data_2d.shape}")
+# Additional check to make sure data and labels align
+assert len(cleaned_data) == len(y_labels), "Number of trials doesn't match number of labels"
+assert not np.any(np.isnan(cleaned_data)), "Data contains NaN values"
+assert not np.any(np.isinf(cleaned_data)), "Data contains infinite values"
 
-"""### Calculate covariance matrices for each class"""
-classes = np.unique(y_labels)  # Use y_labels instead of y
-batch_size = 100  # Process data in batches to save memory
-
-"""### Initialize arrays for storing class-specific data"""
-class_covs = []
-class_counts = []
-
-for c in classes:
-    # Get data for this class using y_labels
-    class_data = data_2d[y_labels == c]
-    n_class_trials = class_data.shape[0]
-
-    # Initialize covariance matrix
-    cov = np.zeros((n_channels * n_samples, n_channels * n_samples))
-
-    # Process in batches
-    for i in range(0, n_class_trials, batch_size):
-        batch = class_data[i:i + batch_size]
-        # Update covariance matrix
-        cov += np.dot(batch.T, batch)
-
-    # Normalize and add regularization
-    cov /= n_class_trials
-    cov += np.eye(cov.shape[0]) * 1e-6  # Add small regularization
-    class_covs.append(cov)
-    class_counts.append(n_class_trials)
-
-"""### Calculate average covariance matrix incrementally"""
-cov_avg = np.zeros_like(class_covs[0])
-total_trials = sum(class_counts)
-
-for cov, count in zip(class_covs, class_counts):
-    cov_avg += cov * (count / total_trials)
-
-"""### Add regularization to ensure matrix is invertible"""
-cov_avg += np.eye(cov_avg.shape[0]) * 1e-6
-
-"""### Calculate CSP filters for each class"""
-csp_filters = []
-for cov in class_covs:
-    try:
-        # Add regularization to both matrices
-        cov_reg = cov + np.eye(cov.shape[0]) * 1e-6
-        cov_avg_reg = cov_avg + np.eye(cov_avg.shape[0]) * 1e-6
-        
-        # Ensure matrices are symmetric
-        cov_reg = (cov_reg + cov_reg.T) / 2
-        cov_avg_reg = (cov_avg_reg + cov_avg_reg.T) / 2
-        
-        # Solve generalized eigenvalue problem with regularization
-        eigvals, eigvecs = eigh(cov_reg, cov_avg_reg)
-        
-        # Sort eigenvalues in descending order
-        idx = np.argsort(eigvals)[::-1]
-        eigvecs = eigvecs[:, idx]
-        
-        # Select top n_components
-        csp_filters.append(eigvecs[:, :n_components])
-    except np.linalg.LinAlgError as e:
-        print(f"Warning: LinAlgError in CSP calculation: {e}")
-        # Use identity matrix as fallback
-        csp_filters.append(np.eye(n_channels * n_samples)[:, :n_components])
-
-"""### Combine CSP filters from all classes"""
-W = np.hstack(csp_filters)
-
-"""### Apply CSP transformation in batches"""
-csp_features = np.zeros((n_trials, W.shape[1]))
-for i in range(0, n_trials, batch_size):
-    batch = data_2d[i:i + batch_size]
-    csp_features[i:i + batch_size] = np.dot(batch, W)
+# Fit and transform the data
+csp_features = csp.fit_transform(cleaned_data, y_labels)
 
 print("CSP feature extraction completed")
-
-## Print feature information
 print("\nFeature Information:")
 print("CSP Features shape:", csp_features.shape)
-print("Number of CSP components:", W.shape[1])
 
-## Visualize CSP patterns
-plt.figure(figsize=(12, 8))
-n_plots = min(4, W.shape[1])
-for i in range(n_plots):
-    plt.subplot(2, 2, i+1)
-    plt.plot(W[:, i])
+# Visualizing CSP patterns
+print("\nVisualizing CSP patterns...")
+patterns = csp.patterns_
+patterns_norm = patterns / np.max(np.abs(patterns))
+
+plt.figure(figsize=(16, 4))
+class_names = ['Right Hand', 'Left Hand', 'Feet', 'Tongue']  # Updated class names for all 4 classes
+for i in range(min(4, n_components_csp)):  # Show patterns for all 4 classes
+    plt.subplot(1, 4, i + 1)
+    plt.imshow(patterns_norm[i].reshape(4, 4), cmap='jet', interpolation='nearest')
     plt.title(f'CSP Pattern {i+1}')
+    plt.colorbar()
 plt.tight_layout()
 plt.show()
 
+# Train SVM classifier with all classes
+print("\nTraining SVM classifier...")
+X_train, X_test, y_train, y_test = train_test_split(
+    csp_features, y_labels, test_size=0.2, random_state=42
+)
+
+clf = SVC(kernel='rbf', random_state=42)
+clf.fit(X_train, y_train)
+
+# Evaluate the model
+y_pred = clf.predict(X_test)
+accuracy = accuracy_score(y_test, y_pred)
+print(f"\nClassification Accuracy: {accuracy:.4f}")
+
+# Print detailed classification report
+print("\nClassification Report:")
+print(classification_report(y_test, y_pred, target_names=class_names))
+
+"""## Save preprocessed data and features"""
+
+np.save('preprocessed_data.npy', cleaned_data)
+np.save('csp_features.npy', csp_features)
+
+print('----------------------------------------')
+
+"""# Model"""
+
+"""## Load preprocessed data and features"""
 
 """## Save preprocessed data and features"""
 
@@ -301,23 +325,55 @@ csp_features = np.load('csp_features.npy')
 
 """## Split data into training and testing sets"""
 
-X_train, X_test, y_train, y_test = train_test_split(csp_features, y_labels, test_size=0.2, random_state=42)  # Use y_labels here too
+print("\nBefore training:")
+print(f"CSP features shape: {csp_features.shape}")
+print(f"Labels shape: {y_labels.shape}")
+print("\nClass distribution in full dataset:")
+unique_labels, counts = np.unique(y_labels, return_counts=True)
+for label, count in zip(unique_labels, counts):
+    print(f"Class {label}: {count} samples")
 
-## SVM Model
-svm = SVC(kernel='linear')
-svm.fit(X_train, y_train)
+X_train, X_test, y_train, y_test = train_test_split(csp_features, y_labels, test_size=0.2, random_state=42, stratify=y_labels)
 
-## Evaluate model
-y_pred = svm.predict(X_test)
-print("\nModel Evaluation:")
-print("Accuracy:", accuracy_score(y_test, y_pred))
-print("\nClassification Report:")
-print(classification_report(y_test, y_pred))
+print("\nTraining set:")
+print(f"X_train shape: {X_train.shape}")
+print(f"y_train shape: {y_train.shape}")
+print("\nClass distribution in training set:")
+unique_labels, counts = np.unique(y_train, return_counts=True)
+for label, count in zip(unique_labels, counts):
+    print(f"Class {label}: {count} samples")
 
-
+print("\nTest set:")
+print(f"X_test shape: {X_test.shape}")
+print(f"y_test shape: {y_test.shape}")
+print("\nClass distribution in test set:")
+unique_labels, counts = np.unique(y_test, return_counts=True)
+for label, count in zip(unique_labels, counts):
+    print(f"Class {label}: {count} samples")
 
 """## SVM Model"""
-svm = SVC(kernel='linear')
+
+# Try different kernels
+kernels = ['linear', 'rbf', 'poly']
+best_accuracy = 0
+best_kernel = None
+
+for kernel in kernels:
+    print(f"\nTraining SVM with {kernel} kernel...")
+    svm = SVC(kernel=kernel, random_state=42)
+    svm.fit(X_train, y_train)
+    y_pred = svm.predict(X_test)
+    accuracy = accuracy_score(y_test, y_pred)
+    print(f"Accuracy with {kernel} kernel: {accuracy:.4f}")
+    
+    if accuracy > best_accuracy:
+        best_accuracy = accuracy
+        best_kernel = kernel
+
+print(f"\nBest kernel: {best_kernel} with accuracy: {best_accuracy:.4f}")
+
+# Train final model with best kernel
+svm = SVC(kernel=best_kernel, random_state=42)
 svm.fit(X_train, y_train)
 
 """## Evaluate model"""
