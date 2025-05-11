@@ -68,11 +68,6 @@ print('unique labels count:', data['label'].value_counts())
 - there are 4 labels: right hand, left hand, feet and tongue
 """
 
-# visualize corr of data
-# plt.figure(figsize=(15, 15))
-# sns.heatmap(data.corr(), annot=True, cmap='coolwarm')
-# plt.show()
-
 """# Preprocessing
 
 ## Encoding
@@ -178,30 +173,30 @@ print (pca.explained_variance_ratio_.cumsum())
 feature_names = data.drop('label', axis=1).columns.tolist()
 
 # Plot each column's contribution to PCA components separately
-print("\nGenerating individual plots for each feature's PCA contributions...")
-for col_idx, col_name in enumerate(feature_names):
-    plt.figure(figsize=(6, 2))  # Made even smaller for better visibility
-    # Get contribution of this column to each PCA component
-    contributions = [pca.components_[i][col_idx] for i in range(n_components_pca)]
-    plt.bar(range(n_components_pca), contributions)
-    plt.title(f'{col_name}', fontsize=8)
-    plt.xlabel('PCA Component')
-    plt.ylabel('Weight')
-    plt.xticks(range(n_components_pca), [f'{i+1}' for i in range(n_components_pca)], fontsize=6)
-    plt.tight_layout()
-    plt.show()
-    plt.close()  # Close the figure to free memory
+# print("\nGenerating individual plots for each feature's PCA contributions...")
+# for col_idx, col_name in enumerate(feature_names):
+#     plt.figure(figsize=(6, 2))  # Made even smaller for better visibility
+#     # Get contribution of this column to each PCA component
+#     contributions = [pca.components_[i][col_idx] for i in range(n_components_pca)]
+#     plt.bar(range(n_components_pca), contributions)
+#     plt.title(f'{col_name}', fontsize=8)
+#     plt.xlabel('PCA Component')
+#     plt.ylabel('Weight')
+#     plt.xticks(range(n_components_pca), [f'{i+1}' for i in range(n_components_pca)], fontsize=6)
+#     plt.tight_layout()
+#     plt.show()
+#     plt.close()  # Close the figure to free memory
     
-# Plot variance explained by each component
-plt.figure(figsize=(6, 2))
-plt.bar(range(n_components_pca), pca.explained_variance_ratio_)
-plt.title('Variance Explained by Components', fontsize=8)
-plt.xlabel('Component')
-plt.ylabel('Ratio')
-plt.xticks(range(n_components_pca), [f'{i+1}' for i in range(n_components_pca)], fontsize=6)
-plt.tight_layout()
-plt.show()
-plt.close()
+# # Plot variance explained by each component
+# plt.figure(figsize=(6, 2))
+# plt.bar(range(n_components_pca), pca.explained_variance_ratio_)
+# plt.title('Variance Explained by Components', fontsize=8)
+# plt.xlabel('Component')
+# plt.ylabel('Ratio')
+# plt.xticks(range(n_components_pca), [f'{i+1}' for i in range(n_components_pca)], fontsize=6)
+# plt.tight_layout()
+# plt.show()
+# plt.close()
 
 
 # # Plot time series for each component separately
@@ -250,7 +245,7 @@ plt.tight_layout()
 plt.suptitle('All ICA Components (Time Series)', y=1.02)
 plt.show()
 
-fig, ax = plt.subplots(5, 5, figsize=(12, 12))  # Adjusted for 16 columns
+fig, ax = plt.subplots(4, 4, figsize=(12, 12))  # Adjusted for 16 columns
 row = 0
 col = 0
 count = 0
@@ -263,7 +258,7 @@ for i in range(n_components_ica):
     ax[row, col].set_title(column_names[i])
     count += 1
     col += 1
-    if count % 5 == 0:
+    if count % 4 == 0:
         row += 1
         col = 0
 
@@ -272,19 +267,53 @@ for ax in fig.get_axes():
 
 fig.tight_layout()
 
+"""remove components with blink in it"""
+components_to_remove = [3, 6, 7, 14]
+
+# Create mask for components to keep
+keep_mask = np.ones(n_components_ica, dtype=bool)
+keep_mask[components_to_remove] = False
+remaining_components = np.where(keep_mask)[0]
+
+# Keep only the desired components
+ica_data = ica_data[:, remaining_components]
+
+print(f"Removed components: {components_to_remove}")
+print(f"Remaining components: {len(remaining_components)}")
+print(f"ICA data shape before reshaping: {ica_data.shape}")
+
 """### reshape ICA data"""
+# Calculate dimensions
+n_timepoints = ica_data.shape[0]
+n_remaining = len(remaining_components)
+calculated_trials = n_timepoints // n_samples
+
+print("Calculated dimensions:")
+print(f"Total timepoints: {n_timepoints}")
+print(f"Samples per trial: {n_samples}")
+print(f"Calculated number of trials: {calculated_trials}")
+print(f"Number of remaining components: {n_remaining}")
+
 # Reshape back to maintain temporal structure
-ica_data_reshaped = ica_data.reshape(n_trials, n_samples, n_components_ica)
+ica_data_reshaped = ica_data.reshape(calculated_trials, n_samples, n_remaining)
 # Transpose to get (trials, channels, samples)
 ica_data_reshaped = np.transpose(ica_data_reshaped, (0, 2, 1))
 
 print(f"ICA data shape after reshaping: {ica_data_reshaped.shape}")
 
-# Verify dimensions
-if ica_data_reshaped.shape[1] == n_components_ica:
-    print("Success! ICA data has exactly 16 components")
-else:
-    print(f"Warning: ICA data has {ica_data_reshaped.shape[1]} components instead of 16")
+# # Verify dimensions
+# expected_components = len(remaining_components)
+# if (ica_data_reshaped.shape[1] == expected_components and 
+#     ica_data_reshaped.shape[0] == calculated_trials and 
+#     ica_data_reshaped.shape[2] == n_samples):
+#     print("\nDimension verification successful:")
+#     print(f"- Number of trials: {ica_data_reshaped.shape[0]}")
+#     print(f"- Number of components: {ica_data_reshaped.shape[1]} (expected {expected_components})")
+#     print(f"- Samples per trial: {ica_data_reshaped.shape[2]} (expected {n_samples})")
+# else:
+#     print("\nWarning: Dimension mismatch:")
+#     print(f"- Current shape: {ica_data_reshaped.shape}")
+#     print(f"- Expected: (n_trials={calculated_trials}, n_components={expected_components}, n_samples={n_samples})")
 
 # Use ica_data_reshaped for CSP extraction
 cleaned_data = ica_data_reshaped
@@ -339,8 +368,8 @@ class_names = ['Right Hand', 'Left Hand', 'Feet', 'Tongue']  # Updated class nam
 
 """## Save preprocessed data and features"""
 
-# np.save('preprocessed_data.npy', cleaned_data)
-# np.save('csp_features.npy', csp_features)
+np.save('preprocessed_data.npy', cleaned_data)
+np.save('csp_features.npy', csp_features)
 
 print("\nPreprocessed data and features saved successfully")
 
@@ -428,9 +457,9 @@ print(classification_report(y_test, y_pred, target_names=class_names))
 #     print(f"Mean CV Score: {mean_score:.4f} (+/- {std_score*2:.4f})\n")
 
 """## Save test data and model for later evaluation"""
-# print("\nSaving test data and model...")
-# np.save('X_test.npy', X_test)
-# np.save('y_test.npy', y_test)
-# print("Test data saved successfully")
+print("\nSaving test data and model...")
+np.save('X_test.npy', X_test)
+np.save('y_test.npy', y_test)
+print("Test data saved successfully")
 dump(svm, 'svm_model.joblib')
 print("model saved successfully")
