@@ -2,6 +2,7 @@
 ## Data manipulation and analysis
 import numpy as np
 import pandas as pd
+from joblib import dump, load
 
 ## Data visualization
 import seaborn as sns
@@ -16,7 +17,7 @@ from scipy.signal import butter, lfilter, filtfilt
 from scipy.linalg import eigh
 
 ## Machine learning
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.metrics import accuracy_score, classification_report
 from sklearn.svm import SVC
 
@@ -32,6 +33,7 @@ n_components = 4
 n_components_pca = 16
 n_components_ica = 16
 n_components_csp = 4
+samples_per_trial = 100
 
 """# Data
 
@@ -41,9 +43,9 @@ n_components_csp = 4
 - The data is divided into 9 sessions, each containing 288 trials. Each trial is 4 seconds long and contains 22 EEG channels.
 - The data is sampled at 250 Hz, resulting in 1000 samples per trial.
 - The labels are binary (1, 2, 3, 4) and represent the two classes of motor imagery tasks: left hand, right hand, Tounge and Foot.
-
-## load data
 """
+
+"""## load data"""
 
 data = pd.read_csv('Data/eeg-motor-imagery-bciciv-2a/BCICIV_2a_all_patients.csv')
 
@@ -108,7 +110,6 @@ for label, count in zip(unique_labels, counts):
 
 """## Reshape data into trials"""
 
-samples_per_trial = 100  # Changed from 1000 to 100
 n_trials = X.shape[0] // samples_per_trial
 X = X[:n_trials * samples_per_trial]
 y = y[:n_trials * samples_per_trial]
@@ -168,24 +169,58 @@ unique_labels, counts = np.unique(y_labels, return_counts=True)
 for label, count in zip(unique_labels, counts):
     print(f"Class {label}: {count} trials")
 
+# print (pca.explained_variance_)
+print (pca.explained_variance_ratio_)
+print (pca.explained_variance_ratio_.cumsum())
+
 """### Plot PCA components"""
-plt.figure(figsize=(18, 12))
-n_cols = 4
-n_rows = int(np.ceil(n_components_pca / n_cols))
+# Get column names (features)
+feature_names = data.drop('label', axis=1).columns.tolist()
 
-# Plot each PCA component
-for i in range(n_components_pca):
-    plt.subplot(n_rows, n_cols, i+1)
-    # Get the i-th component's time series data
-    component_data = pca_data[:, i, :].flatten()
-    plt.plot(component_data, alpha=0.7)
-    plt.title(f'PCA Component {i+1}\nVar: {pca.explained_variance_ratio_[i]:.2%}', fontsize=8)
-    plt.xticks([])
-    plt.yticks([])
-
+# Plot each column's contribution to PCA components separately
+print("\nGenerating individual plots for each feature's PCA contributions...")
+for col_idx, col_name in enumerate(feature_names):
+    plt.figure(figsize=(6, 2))  # Made even smaller for better visibility
+    # Get contribution of this column to each PCA component
+    contributions = [pca.components_[i][col_idx] for i in range(n_components_pca)]
+    plt.bar(range(n_components_pca), contributions)
+    plt.title(f'{col_name}', fontsize=8)
+    plt.xlabel('PCA Component')
+    plt.ylabel('Weight')
+    plt.xticks(range(n_components_pca), [f'{i+1}' for i in range(n_components_pca)], fontsize=6)
+    plt.tight_layout()
+    plt.show()
+    plt.close()  # Close the figure to free memory
+    
+# Plot variance explained by each component
+plt.figure(figsize=(6, 2))
+plt.bar(range(n_components_pca), pca.explained_variance_ratio_)
+plt.title('Variance Explained by Components', fontsize=8)
+plt.xlabel('Component')
+plt.ylabel('Ratio')
+plt.xticks(range(n_components_pca), [f'{i+1}' for i in range(n_components_pca)], fontsize=6)
 plt.tight_layout()
-plt.suptitle('All PCA Components (Time Series)', y=1.02)
 plt.show()
+plt.close()
+
+
+# # Plot time series for each component separately
+# print("\nGenerating time series plots for each PCA component...")
+# for i in range(n_components_pca):
+#     plt.figure(figsize=(6, 2))
+#     component_data = pca_data[:, i, :].flatten()
+#     plt.plot(component_data, alpha=0.7, linewidth=0.5)
+    
+#     # Add top contributing features
+#     loadings = abs(pca.components_[i])
+#     top_features_idx = loadings.argsort()[-3:][::-1]
+#     top_features = [feature_names[idx][:10] for idx in top_features_idx]
+    
+#     plt.title(f'PC{i+1} Time Series\nVar: {pca.explained_variance_ratio_[i]:.2%}\nTop: {", ".join(top_features)}', 
+#               fontsize=8)
+#     plt.tight_layout()
+#     plt.show()
+#     plt.close()
 
 """## apply ICA"""
 
@@ -214,6 +249,28 @@ for i in range(n_components_ica):
 plt.tight_layout()
 plt.suptitle('All ICA Components (Time Series)', y=1.02)
 plt.show()
+
+fig, ax = plt.subplots(5, 5, figsize=(12, 12))  # Adjusted for 16 columns
+row = 0
+col = 0
+count = 0
+
+# Assuming you have the column names in a list called `column_names`
+column_names = [f"Column {i+1}" for i in range(n_components_ica)]  # Replace with actual column names if available
+
+for i in range(n_components_ica):
+    ax[row, col].plot(ica_data[:, i]**2)
+    ax[row, col].set_title(column_names[i])
+    count += 1
+    col += 1
+    if count % 5 == 0:
+        row += 1
+        col = 0
+
+for ax in fig.get_axes():
+    ax.label_outer()
+
+fig.tight_layout()
 
 """### reshape ICA data"""
 # Reshape back to maintain temporal structure
@@ -265,56 +322,27 @@ print("CSP feature extraction completed")
 print("\nFeature Information:")
 print("CSP Features shape:", csp_features.shape)
 
-# Visualizing CSP patterns
-print("\nVisualizing CSP patterns...")
-patterns = csp.patterns_
-patterns_norm = patterns / np.max(np.abs(patterns))
-
-plt.figure(figsize=(16, 4))
+"""# Visualizing CSP patterns"""
 class_names = ['Right Hand', 'Left Hand', 'Feet', 'Tongue']  # Updated class names for all 4 classes
-for i in range(min(4, n_components_csp)):  # Show patterns for all 4 classes
-    plt.subplot(1, 4, i + 1)
-    plt.imshow(patterns_norm[i].reshape(4, 4), cmap='jet', interpolation='nearest')
-    plt.title(f'CSP Pattern {i+1}')
-    plt.colorbar()
-plt.tight_layout()
-plt.show()
+# print("\nVisualizing CSP patterns...")
+# patterns = csp.patterns_
+# patterns_norm = patterns / np.max(np.abs(patterns))
 
-# Train SVM classifier with all classes
-print("\nTraining SVM classifier...")
-X_train, X_test, y_train, y_test = train_test_split(
-    csp_features, y_labels, test_size=0.2, random_state=42
-)
-
-clf = SVC(kernel='rbf', random_state=42)
-clf.fit(X_train, y_train)
-
-# Evaluate the model
-y_pred = clf.predict(X_test)
-accuracy = accuracy_score(y_test, y_pred)
-print(f"\nClassification Accuracy: {accuracy:.4f}")
-
-# Print detailed classification report
-print("\nClassification Report:")
-print(classification_report(y_test, y_pred, target_names=class_names))
+# plt.figure(figsize=(16, 4))
+# for i in range(min(4, n_components_csp)):  # Show patterns for all 4 classes
+#     plt.subplot(1, 4, i + 1)
+#     plt.imshow(patterns_norm[i].reshape(4, 4), cmap='jet', interpolation='nearest')
+#     plt.title(f'CSP Pattern {i+1}')
+#     plt.colorbar()
+# plt.tight_layout()
+# plt.show()
 
 """## Save preprocessed data and features"""
 
-np.save('preprocessed_data.npy', cleaned_data)
-np.save('csp_features.npy', csp_features)
+# np.save('preprocessed_data.npy', cleaned_data)
+# np.save('csp_features.npy', csp_features)
 
-print('----------------------------------------')
-
-"""# Model"""
-
-"""## Load preprocessed data and features"""
-
-"""## Save preprocessed data and features"""
-
-np.save('preprocessed_data.npy', cleaned_data)
-np.save('csp_features.npy', csp_features)
-
-print('----------------------------------------')
+print("\nPreprocessed data and features saved successfully")
 
 """# Model"""
 
@@ -351,35 +379,58 @@ unique_labels, counts = np.unique(y_test, return_counts=True)
 for label, count in zip(unique_labels, counts):
     print(f"Class {label}: {count} samples")
 
-"""## SVM Model"""
+"""## SVM Model with Grid Search"""
+# # Define parameter grid
+# param_grid = {
+#     'C': [0.1, 1, 10, 100],
+#     'gamma': ['scale', 'auto', 0.001, 0.01, 0.1],
+#     'kernel': ['linear', 'rbf', 'poly'],
+#     'degree': [2, 3, 4]  # Only used by poly kernel
+# }
 
-# Try different kernels
-kernels = ['linear', 'rbf', 'poly']
-best_accuracy = 0
-best_kernel = None
+# print("\nPerforming Grid Search for SVM parameters...")
+# grid_search = GridSearchCV(
+#     SVC(random_state=42),
+#     param_grid,
+#     cv=5,
+#     n_jobs=-1,  # Use all available cores
+#     verbose=2,
+#     scoring='accuracy'
+# )
 
-for kernel in kernels:
-    print(f"\nTraining SVM with {kernel} kernel...")
-    svm = SVC(kernel=kernel, random_state=42)
-    svm.fit(X_train, y_train)
-    y_pred = svm.predict(X_test)
-    accuracy = accuracy_score(y_test, y_pred)
-    print(f"Accuracy with {kernel} kernel: {accuracy:.4f}")
-    
-    if accuracy > best_accuracy:
-        best_accuracy = accuracy
-        best_kernel = kernel
+# # Fit grid search
+# grid_search.fit(X_train, y_train)
 
-print(f"\nBest kernel: {best_kernel} with accuracy: {best_accuracy:.4f}")
+# # Print results
+# print("\nGrid Search Results:")
+# print(f"Best parameters: {grid_search.best_params_}")
+# print(f"Best cross-validation accuracy: {grid_search.best_score_:.4f}")
 
-# Train final model with best kernel
-svm = SVC(kernel=best_kernel, random_state=42)
+"""## SVM model with best parameters"""
+# Get the best model
+svm = SVC(C=100, gamma=0.1, kernel='rbf', random_state=42)
 svm.fit(X_train, y_train)
-
-"""## Evaluate model"""
+# Evaluate on test set
 y_pred = svm.predict(X_test)
-print("\nModel Evaluation:")
-print("Accuracy:", accuracy_score(y_test, y_pred))
-print("\nClassification Report:")
-print(classification_report(y_test, y_pred))
+test_accuracy = accuracy_score(y_test, y_pred)
+print(f"\nTest set accuracy: {test_accuracy:.4f}")
 
+print("\nDetailed Classification Report:")
+print(classification_report(y_test, y_pred, target_names=class_names))
+
+# #Print parameter ranking
+# print("\nParameter importance ranking:")
+# cv_results = pd.DataFrame(grid_search.cv_results_)
+# for i, params in enumerate(cv_results['params']):
+#     mean_score = cv_results['mean_test_score'][i]
+#     std_score = cv_results['std_test_score'][i]
+#     print(f"Parameters: {params}")
+#     print(f"Mean CV Score: {mean_score:.4f} (+/- {std_score*2:.4f})\n")
+
+"""## Save test data and model for later evaluation"""
+# print("\nSaving test data and model...")
+# np.save('X_test.npy', X_test)
+# np.save('y_test.npy', y_test)
+# print("Test data saved successfully")
+dump(svm, 'svm_model.joblib')
+print("model saved successfully")
