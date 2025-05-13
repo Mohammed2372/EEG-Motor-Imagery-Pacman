@@ -141,6 +141,17 @@ def handle_button_click(pos, pred_button_rect, key_button_rect):
     elif key_button_rect.collidepoint(pos):
         game_started = True
         game_mode = 'keyboard'
+        global NUM_COINS
+        global NUM_WALLS
+        NUM_COINS = 10
+        NUM_WALLS = 15
+
+    # Reset game state
+    score = 0
+    move_index = 0
+    player_pos[0], player_pos[1] = 5, 5  # Reset player position
+    generate_walls()
+    generate_coins()
 
 ## move player
 def move_player(direction):
@@ -172,14 +183,21 @@ score = 0
 
 while running:
     screen.fill(BLACK)
-    
     for e in pygame.event.get():
         if e.type == pygame.QUIT:
             running = False
+        elif e.type == pygame.KEYDOWN and e.key == pygame.K_r:
+            # Reset game to main menu
+            game_started = False
+            game_mode = None
+            score = 0
+            move_index = 0
+            last_move_time = time.time()
+            player_pos[0], player_pos[1] = 5, 5
         elif e.type == pygame.MOUSEBUTTONDOWN and not game_started:
             # Handle button clicks in menu
             pred_button_rect, key_button_rect = draw_buttons()
-            handle_button_click(e.pos, pred_button_rect, key_button_rect)        
+            handle_button_click(e.pos, pred_button_rect, key_button_rect)
         elif e.type == pygame.KEYDOWN and game_mode == 'keyboard' and coins:  # Only move if there are coins left
             # Handle keyboard controls
             old_pos = tuple(player_pos)
