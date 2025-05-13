@@ -29,15 +29,21 @@ DIRS = {
 }
 
 # list of moves
-directions_list = list(np.load("Saved Data/predictions.npy"))
+directions_list = list(np.load("predictions.npy"))
 # print(directions_list)
 directions_list = directions_list[:TEST_NUMBER]
 
 # game settings
 walls = set()
 coins = set()
-score = 0  # Global score variable
+score = 0
+game_started = False
+game_mode = None  # 'prediction' or 'keyboard'
 
+# Button settings
+BUTTON_WIDTH = 200
+BUTTON_HEIGHT = 50
+BUTTON_PADDING = 20
 
 # player position
 player_pos = [5, 5]
@@ -104,6 +110,38 @@ def draw_score():
     text_width = text.get_width()
     screen.blit(text, (WIDTH//2 - text_width//2, 10))
 
+## draw buttons
+def draw_buttons():
+    font = pygame.font.SysFont(None, 36)
+    
+    # Prediction mode button
+    pred_button_rect = pygame.Rect(WIDTH//2 - BUTTON_WIDTH - BUTTON_PADDING, HEIGHT//2 - BUTTON_HEIGHT//2, 
+                                 BUTTON_WIDTH, BUTTON_HEIGHT)
+    pygame.draw.rect(screen, BLUE, pred_button_rect)
+    pred_text = font.render("Predictions", True, WHITE)
+    pred_text_rect = pred_text.get_rect(center=pred_button_rect.center)
+    screen.blit(pred_text, pred_text_rect)
+    
+    # Keyboard mode button
+    key_button_rect = pygame.Rect(WIDTH//2 + BUTTON_PADDING, HEIGHT//2 - BUTTON_HEIGHT//2, 
+                                BUTTON_WIDTH, BUTTON_HEIGHT)
+    pygame.draw.rect(screen, BLUE, key_button_rect)
+    key_text = font.render("Keyboard", True, WHITE)
+    key_text_rect = key_text.get_rect(center=key_button_rect.center)
+    screen.blit(key_text, key_text_rect)
+    
+    return pred_button_rect, key_button_rect
+
+## handle button clicks
+def handle_button_click(pos, pred_button_rect, key_button_rect):
+    global game_started, game_mode
+    if pred_button_rect.collidepoint(pos):
+        game_started = True
+        game_mode = 'prediction'
+    elif key_button_rect.collidepoint(pos):
+        game_started = True
+        game_mode = 'keyboard'
+
 ## move player
 def move_player(direction):
     dx, dy = DIRS.get(direction, (0, 0))
@@ -134,31 +172,57 @@ score = 0
 
 while running:
     screen.fill(BLACK)
-    # draw_grid()
-    draw_maze()
-    draw_coins()
-    draw_player()
-    draw_score()
     
     for e in pygame.event.get():
         if e.type == pygame.QUIT:
-            running = False    # move every second based on the direction list
-    if move_index < len(directions_list) and time.time() - last_move_time > 1:
-        old_pos = tuple(player_pos)  # Remember position before moving
-        move_player(directions_list[move_index])        # Check if player collected a coin at the new position
-        new_pos = tuple(player_pos)
-        if new_pos in coins and new_pos != old_pos:  # Only collect if we actually moved to the coin
-            coins.remove(new_pos)
-            score += 1
-            print(f"Coin collected! Score: {score}/{NUM_COINS}")
-        move_index += 1
-        last_move_time = time.time()
+            running = False
+        elif e.type == pygame.MOUSEBUTTONDOWN and not game_started:
+            # Handle button clicks in menu
+            pred_button_rect, key_button_rect = draw_buttons()
+            handle_button_click(e.pos, pred_button_rect, key_button_rect)        elif e.type == pygame.KEYDOWN and game_mode == 'keyboard' and coins:  # Only move if there are coins left
+            # Handle keyboard controls
+            old_pos = tuple(player_pos)
+            if e.key == pygame.K_UP:
+                move_player("up")
+            elif e.key == pygame.K_DOWN:
+                move_player("down")
+            elif e.key == pygame.K_LEFT:
+                move_player("left")
+            elif e.key == pygame.K_RIGHT:
+                move_player("right")
+            # Check for coin collection after keyboard move
+            new_pos = tuple(player_pos)
+            if new_pos in coins and new_pos != old_pos:
+                coins.remove(new_pos)
+                score += 1
+                print(f"Coin collected! Score: {score}/{NUM_COINS}")
     
-    # Check for win condition (all coins collected)
-    if not coins:  # if coins set is empty
-        font = pygame.font.SysFont(None, 48)
-        text = font.render("All Coins Collected!", True, YELLOW)
-        screen.blit(text, (WIDTH//3, HEIGHT//2))
+    if not game_started:
+        # Draw menu
+        pred_button_rect, key_button_rect = draw_buttons()
+    else:
+        # Draw game
+        draw_maze()
+        draw_coins()
+        draw_player()
+        draw_score()
+          # Handle prediction-based movement only if there are still coins to collect
+        if game_mode == 'prediction' and coins and move_index < len(directions_list) and time.time() - last_move_time > 1:
+            old_pos = tuple(player_pos)
+            move_player(directions_list[move_index])
+            new_pos = tuple(player_pos)
+            if new_pos in coins and new_pos != old_pos:
+                coins.remove(new_pos)
+                score += 1
+                print(f"Coin collected! Score: {score}/{NUM_COINS}")
+            move_index += 1
+            last_move_time = time.time()
+        
+        # Check for win condition
+        if not coins:
+            font = pygame.font.SysFont(None, 48)
+            text = font.render("All Coins Collected!", True, YELLOW)
+            screen.blit(text, (WIDTH//3, HEIGHT//2))
 
     pygame.display.flip()
     clock.tick(FPS)
