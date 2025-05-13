@@ -138,11 +138,15 @@ def handle_button_click(pos, pred_button_rect, key_button_rect):
     if pred_button_rect.collidepoint(pos):
         game_started = True
         game_mode = 'prediction'
+        global NUM_COINS
+        global NUM_WALLS
+        NUM_COINS = 5
+        NUM_WALLS = 8
     elif key_button_rect.collidepoint(pos):
         game_started = True
         game_mode = 'keyboard'
-        global NUM_COINS
-        global NUM_WALLS
+        # global NUM_COINS
+        # global NUM_WALLS
         NUM_COINS = 10
         NUM_WALLS = 15
 
