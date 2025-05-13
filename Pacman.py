@@ -179,7 +179,8 @@ while running:
         elif e.type == pygame.MOUSEBUTTONDOWN and not game_started:
             # Handle button clicks in menu
             pred_button_rect, key_button_rect = draw_buttons()
-            handle_button_click(e.pos, pred_button_rect, key_button_rect)        elif e.type == pygame.KEYDOWN and game_mode == 'keyboard' and coins:  # Only move if there are coins left
+            handle_button_click(e.pos, pred_button_rect, key_button_rect)        
+        elif e.type == pygame.KEYDOWN and game_mode == 'keyboard' and coins:  # Only move if there are coins left
             # Handle keyboard controls
             old_pos = tuple(player_pos)
             if e.key == pygame.K_UP:
@@ -206,8 +207,9 @@ while running:
         draw_coins()
         draw_player()
         draw_score()
-          # Handle prediction-based movement only if there are still coins to collect
-        if game_mode == 'prediction' and coins and move_index < len(directions_list) and time.time() - last_move_time > 1:
+        
+        # Handle prediction-based movement
+        if game_mode == 'prediction' and move_index < len(directions_list) and time.time() - last_move_time > 1:
             old_pos = tuple(player_pos)
             move_player(directions_list[move_index])
             new_pos = tuple(player_pos)
