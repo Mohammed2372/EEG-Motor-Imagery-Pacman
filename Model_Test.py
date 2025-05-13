@@ -6,8 +6,8 @@ from sklearn.metrics import accuracy_score, classification_report
 
 print("Loading test data...")
 
-X_test = np.load('X_test.npy')
-y_test = np.load('y_test.npy')
+X_test = np.load('Saved Data/X_test.npy')
+y_test = np.load('Saved Data/y_test.npy')
 
 print("Test data shape:", X_test.shape)
 print("Test labels shape:", y_test.shape)
@@ -21,8 +21,12 @@ print("\nMaking predictions...")
 predictions = model.predict(X_test)
 
 # Save predictions
-np.save('predictions.npy', predictions)
-print("Predictions saved to 'predictions.npy'")
+## Map predictions back to string labels before saving
+label_map = {1: 'right', 2: 'left', 3: 'down', 4: 'up'}
+predictions_str = np.vectorize(label_map.get)(predictions)
+
+np.save('Saved Data/predictions.npy', predictions_str)
+print("Predictions saved to 'predictions.npy' as string labels")
 
 # Evaluate results
 accuracy = accuracy_score(y_test, predictions)
@@ -32,10 +36,3 @@ print(f"\nTest Accuracy: {accuracy:.4f}")
 class_names = ['Right Hand', 'Left Hand', 'Feet', 'Tongue']
 print("\nClassification Report:")
 print(classification_report(y_test, predictions, target_names=class_names))
-
-# Save results to a text file
-with open('test_results.txt', 'w') as f:
-    f.write(f"Test Accuracy: {accuracy:.4f}\n\n")
-    f.write("Classification Report:\n")
-    f.write(classification_report(y_test, predictions, target_names=class_names))
-
