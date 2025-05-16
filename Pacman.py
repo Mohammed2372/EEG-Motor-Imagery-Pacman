@@ -10,6 +10,7 @@ CELL_SIZE = 60
 WIDTH = HEIGHT = GRID_SIZE * CELL_SIZE
 FPS = 60
 TEST_NUMBER = 50
+counter = 0
 NUM_COINS = 5
 NUM_WALLS = 8
 
@@ -29,7 +30,7 @@ DIRS = {
 }
 
 # list of moves
-directions_list = list(np.load("predictions.npy"))
+directions_list = list(np.load("Saved Data/predictions.npy"))
 # print(directions_list)
 directions_list = directions_list[:TEST_NUMBER]
 
@@ -151,8 +152,10 @@ def handle_button_click(pos, pred_button_rect, key_button_rect):
         NUM_WALLS = 15
 
     # Reset game state
+    global counter, score, move_index
     score = 0
     move_index = 0
+    counter = 0
     player_pos[0], player_pos[1] = 5, 5  # Reset player position
     generate_walls()
     generate_coins()
@@ -163,9 +166,11 @@ def move_player(direction):
     new_x = player_pos[0] + dx
     new_y = player_pos[1] + dy
     print(f"\nCurrent Direction: {direction}")
-    print(f"Current Position: ({player_pos[0]}, {player_pos[1]})")
-    print(f"Attempting to move to: ({new_x}, {new_y})")
-    
+    # print(f"Current Position: ({player_pos[0]}, {player_pos[1]})")
+    # print(f"Attempting to move to: ({new_x}, {new_y})")
+    global counter
+    counter+=1
+    print(f"Move {counter} attempted!")
     if 0 <= new_x < GRID_SIZE and 0 <= new_y < GRID_SIZE:
         if (new_x, new_y) not in walls:
             print("Move successful!")

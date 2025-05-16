@@ -2,24 +2,24 @@
 ## Data manipulation and analysis
 import numpy as np
 import pandas as pd
-from joblib import dump, load
+from joblib import dump
 
 ## Data visualization
-import seaborn as sns
 import matplotlib.pyplot as plt
 
 ## signal processing
-import mne
 from sklearn.decomposition import PCA, FastICA
 from mne.decoding import CSP
 from scipy import signal
-from scipy.signal import butter, lfilter, filtfilt
-from scipy.linalg import eigh
+from scipy.signal import butter, filtfilt
 
 ## Machine learning
-from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.model_selection import GridSearchCV  # Removed train_test_split as we're doing manual splitting
 from sklearn.metrics import accuracy_score, classification_report
 from sklearn.svm import SVC
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 
 """# parameters"""
 
@@ -33,7 +33,7 @@ n_components = 4
 n_components_pca = 16
 n_components_ica = 16
 n_components_csp = 4
-samples_per_trial = 100
+samples_per_trial = 201  # Each epoch/trial has 201 samples
 
 """# Data
 
@@ -48,6 +48,11 @@ samples_per_trial = 100
 """## load data"""
 
 data = pd.read_csv('Data/eeg-motor-imagery-bciciv-2a/BCICIV_2a_all_patients.csv')
+
+# Add epoch column if not present
+if 'epoch' not in data.columns:
+    # Calculate epochs based on the fact that each trial has 201 samples
+    data['epoch'] = data.index // samples_per_trial
 
 """## data overview"""
 
@@ -105,15 +110,56 @@ for label, count in zip(unique_labels, counts):
 
 """## Reshape data into trials"""
 
-n_trials = X.shape[0] // samples_per_trial
-X = X[:n_trials * samples_per_trial]
-y = y[:n_trials * samples_per_trial]
-y_labels = y[::samples_per_trial]
-X_reshaped = X.reshape(n_trials, samples_per_trial, -1).transpose(0, 2, 1)
+# Get all EEG columns (sorted to ensure consistent order)
+eeg_columns = sorted([col for col in data.columns if col.startswith('EEG-')])
+n_channels = len(eeg_columns)  # This should be 22 EEG channels
 
-print("\nAfter reshaping:")
-print(f"Number of trials: {n_trials}")
-print(f"Samples per trial: {samples_per_trial}")
+print("\nEEG channels being used:", eeg_columns)
+print("Number of EEG channels found:", n_channels)
+
+# Group data first by patient, then by epoch to get trials
+print("\nProcessing data by patient and epoch...")
+X_reshaped_all = []
+y_labels_all = []
+
+# Group by patient first
+for patient, patient_data in data.groupby('patient'):
+    print(f"\nProcessing patient {patient}")
+    
+    # Then group by epoch within each patient's data
+    patient_grouped = patient_data.groupby('epoch')
+    patient_n_trials = len(patient_grouped)
+    print(f"Number of trials for patient {patient}: {patient_n_trials}")
+    
+    # Initialize arrays for this patient's reshaped data
+    patient_X = np.zeros((patient_n_trials, n_channels, samples_per_trial))
+    patient_y = np.zeros(patient_n_trials)
+    
+    # Process each epoch for this patient
+    for i, (epoch, epoch_data) in enumerate(patient_grouped):
+        # Get EEG data for this epoch
+        epoch_eeg = epoch_data[eeg_columns].values
+        
+        if epoch_eeg.shape[0] != samples_per_trial:
+            print(f"Warning: Epoch {epoch} has {epoch_eeg.shape[0]} samples instead of {samples_per_trial}")
+            continue
+            
+        # Transpose to get (channels, samples)
+        epoch_eeg_T = epoch_eeg.T
+        patient_X[i] = epoch_eeg_T
+        
+        # Store the label (they're all the same within an epoch)
+        patient_y[i] = epoch_data['label'].iloc[0]
+    
+    # Append this patient's data to the main arrays
+    X_reshaped_all.append(patient_X)
+    y_labels_all.append(patient_y)
+
+# Combine all patients' data
+X_reshaped = np.concatenate(X_reshaped_all, axis=0)
+y_labels = np.concatenate(y_labels_all)
+
+print("\nFinal data shapes:")
 print(f"X_reshaped shape: {X_reshaped.shape}")
 print(f"y_labels shape: {y_labels.shape}")
 
@@ -128,6 +174,10 @@ print("Applying bandpass filter...")
 filtered_data = bandpass_filter(X_reshaped)
 print("Applying notch filter...")
 filtered_data = notch_filter(filtered_data)
+
+# Save preprocessed data after filtering
+np.save('Saved Data/filtered_data.npy', filtered_data)
+print("\nFiltered data saved successfully")
 
 print("\nData shape after preprocessing:", filtered_data.shape)
 print("Class distribution after preprocessing:")
@@ -154,6 +204,10 @@ pca.fit(flattened_data)
 for t in range(n_samples):
     time_data = data_2d[:, :, t]
     pca_data[:, :, t] = pca.transform(time_data)
+
+# Save PCA data
+np.save('Saved Data/pca_data.npy', pca_data)
+print("\nPCA data saved successfully")
 
 print(f"\nPCA data shape: {pca_data.shape}")
 print(f"Total variance explained: {np.sum(pca.explained_variance_ratio_):.2%}")
@@ -209,7 +263,7 @@ feature_names = data.drop('label', axis=1).columns.tolist()
 #     # Add top contributing features
 #     loadings = abs(pca.components_[i])
 #     top_features_idx = loadings.argsort()[-3:][::-1]
-#     top_features = [feature_names[idx][:10] for idx in top_features_idx]
+#     top_features = [feature_names[idx][:10] for idx in range(n_components_pca)]
     
 #     plt.title(f'PC{i+1} Time Series\nVar: {pca.explained_variance_ratio_[i]:.2%}\nTop: {", ".join(top_features)}', 
 #               fontsize=8)
@@ -224,6 +278,10 @@ print("\nApplying ICA...")
 ica_input = pca_data.reshape(n_trials * n_samples, n_components_pca)
 ica = FastICA(n_components=n_components_ica, random_state=42)
 ica_data = ica.fit_transform(ica_input)
+
+# Save ICA data
+np.save('Saved Data/ica_data.npy', ica_data)
+print("\nICA data saved successfully")
 
 print("\nData shape after ICA:", ica_data.shape)
 print("Class distribution after ICA:")
@@ -268,7 +326,7 @@ for ax in fig.get_axes():
 fig.tight_layout()
 
 """remove components with blink in it"""
-components_to_remove = [3, 6, 7, 14]
+components_to_remove = []
 
 # Create mask for components to keep
 keep_mask = np.ones(n_components_ica, dtype=bool)
@@ -347,9 +405,21 @@ assert not np.any(np.isinf(cleaned_data)), "Data contains infinite values"
 # Fit and transform the data
 csp_features = csp.fit_transform(cleaned_data, y_labels)
 
+# Save CSP features
+np.save('Saved Data/csp_features.npy', csp_features)
+print("\nCSP features saved successfully")
+
 print("CSP feature extraction completed")
 print("\nFeature Information:")
 print("CSP Features shape:", csp_features.shape)
+
+# Save the CSP patterns for visualization
+np.save('Saved Data/csp_patterns.npy', csp.patterns_)
+print("CSP patterns saved successfully")
+
+# Save the labels
+np.save('Saved Data/y_labels.npy', y_labels)
+print("Labels saved successfully")
 
 """# Visualizing CSP patterns"""
 class_names = ['Right Hand', 'Left Hand', 'Feet', 'Tongue']  # Updated class names for all 4 classes
@@ -368,8 +438,8 @@ class_names = ['Right Hand', 'Left Hand', 'Feet', 'Tongue']  # Updated class nam
 
 """## Save preprocessed data and features"""
 
-np.save('preprocessed_data.npy', cleaned_data)
-np.save('csp_features.npy', csp_features)
+np.save('Saved Data/preprocessed_data.npy', cleaned_data)
+
 
 print("\nPreprocessed data and features saved successfully")
 
@@ -377,20 +447,74 @@ print("\nPreprocessed data and features saved successfully")
 
 """## Load preprocessed data and features"""
 
-cleaned_data = np.load('preprocessed_data.npy')
-csp_features = np.load('csp_features.npy')
+cleaned_data = np.load('Saved Data/preprocessed_data.npy')
+csp_features = np.load('Saved Data/csp_features.npy')
 
-"""## Split data into training and testing sets"""
+"""## Split data into training and testing sets per patient"""
 
-print("\nBefore training:")
-print(f"CSP features shape: {csp_features.shape}")
-print(f"Labels shape: {y_labels.shape}")
-print("\nClass distribution in full dataset:")
-unique_labels, counts = np.unique(y_labels, return_counts=True)
-for label, count in zip(unique_labels, counts):
-    print(f"Class {label}: {count} samples")
+# Get patient IDs from the original data
+patient_ids = data['patient'].unique()
+n_patients = len(patient_ids)
+n_classes = 4
+trials_per_class = 72
+train_trials_per_class = 60
+test_trials_per_class = 12
 
-X_train, X_test, y_train, y_test = train_test_split(csp_features, y_labels, test_size=0.2, random_state=42, stratify=y_labels)
+# Initialize arrays for final train and test sets
+X_train = []
+X_test = []
+y_train = []
+y_test = []
+
+# Calculate trials per patient
+trials_per_patient = len(csp_features) // n_patients
+print(f"\nTotal features: {len(csp_features)}")
+print(f"Number of patients: {n_patients}")
+print(f"Trials per patient: {trials_per_patient}")
+
+print("\nSplitting data by patient and class:")
+for i, patient_id in enumerate(patient_ids):
+    print(f"\nProcessing patient {patient_id}:")
+    
+    # Get this patient's portion of the data
+    start_idx = i * trials_per_patient
+    end_idx = (i + 1) * trials_per_patient
+    patient_features = csp_features[start_idx:end_idx]
+    patient_labels = y_labels[start_idx:end_idx]
+    
+    print(f"Patient data shape: {patient_features.shape}")
+    print(f"Unique labels for patient: {np.unique(patient_labels, return_counts=True)}")
+      # Split by class
+    for class_id in range(1, n_classes + 1):
+        class_mask = patient_labels == class_id
+        class_features = patient_features[class_mask]
+        
+        print(f"  Class {class_id}:")
+        print(f"    Number of trials: {len(class_features)}")
+        
+        # Skip if we don't have any trials for this class
+        if len(class_features) == 0:
+            print(f"    Warning: No trials found for patient {patient_id}, class {class_id}")
+            continue
+            
+        # Split into train and test (using all available trials)
+        n_trials = len(class_features)
+        n_train = min(train_trials_per_class, int(0.8 * n_trials))  # Use 80% for training if we have fewer trials
+        n_test = min(test_trials_per_class, n_trials - n_train)
+        
+        print(f"    Using {n_train} trials for training, {n_test} for testing")
+        
+        X_train.append(class_features[:n_train])
+        if n_test > 0:
+            X_test.append(class_features[n_train:n_train + n_test])
+            y_train.extend([class_id] * n_train)
+            y_test.extend([class_id] * n_test)
+
+# Convert to numpy arrays
+X_train = np.vstack(X_train)
+X_test = np.vstack(X_test)
+y_train = np.array(y_train)
+y_test = np.array(y_test)
 
 print("\nTraining set:")
 print(f"X_train shape: {X_train.shape}")
@@ -398,7 +522,7 @@ print(f"y_train shape: {y_train.shape}")
 print("\nClass distribution in training set:")
 unique_labels, counts = np.unique(y_train, return_counts=True)
 for label, count in zip(unique_labels, counts):
-    print(f"Class {label}: {count} samples")
+    print(f"Class {label}: {count} samples (expected {train_trials_per_class * n_patients} samples)")
 
 print("\nTest set:")
 print(f"X_test shape: {X_test.shape}")
@@ -406,7 +530,43 @@ print(f"y_test shape: {y_test.shape}")
 print("\nClass distribution in test set:")
 unique_labels, counts = np.unique(y_test, return_counts=True)
 for label, count in zip(unique_labels, counts):
-    print(f"Class {label}: {count} samples")
+    print(f"Class {label}: {count} samples (expected {test_trials_per_class * n_patients} samples)")
+
+# Verify balance across patients and classes
+print("\nVerifying data balance:")
+print(f"Expected per patient per class: {train_trials_per_class} train, {test_trials_per_class} test")
+print(f"Expected total per class: {train_trials_per_class * n_patients} train, {test_trials_per_class * n_patients} test")
+print(f"Total samples: {len(y_train)} train, {len(y_test)} test")
+
+"""## Test Multiple Models"""
+print("\nTesting Multiple Models...")
+
+# Initialize models
+models = {
+    'SVM': SVC(C=100, gamma=0.1, kernel='rbf', random_state=42),
+    'Random Forest': RandomForestClassifier(n_estimators=100, random_state=42),
+    'KNN': KNeighborsClassifier(n_neighbors=5),
+    'LDA': LinearDiscriminantAnalysis()
+}
+
+# Train and evaluate each model
+results = {}
+for name, model in models.items():
+    print(f"\nTraining {name}...")
+    model.fit(X_train, y_train)
+    y_pred = model.predict(X_test)
+    accuracy = accuracy_score(y_test, y_pred)
+    results[name] = {
+        'accuracy': accuracy,
+        'report': classification_report(y_test, y_pred, target_names=class_names)
+    }
+    print(f"{name} Accuracy: {accuracy:.4f}")
+    print(f"\n{name} Classification Report:")
+    print(results[name]['report'])
+
+# Save only the SVM model as it's our main model
+dump(models['SVM'], 'svm_model.joblib')
+print("\nSVM model saved successfully")
 
 """## SVM Model with Grid Search"""
 # # Define parameter grid
@@ -456,10 +616,34 @@ print(classification_report(y_test, y_pred, target_names=class_names))
 #     print(f"Parameters: {params}")
 #     print(f"Mean CV Score: {mean_score:.4f} (+/- {std_score*2:.4f})\n")
 
+"""## Test Additional Models"""
+print("\nTesting Additional Models...")
+
+# Initialize additional models
+additional_models = {
+    'Random Forest': RandomForestClassifier(n_estimators=100, random_state=42),
+    'KNN': KNeighborsClassifier(n_neighbors=5),
+    'LDA': LinearDiscriminantAnalysis()
+}
+
+# Train and evaluate each additional model
+additional_results = {}
+for name, model in additional_models.items():
+    print(f"\nTraining {name}...")
+    model.fit(X_train, y_train)
+    y_pred = model.predict(X_test)
+    accuracy = accuracy_score(y_test, y_pred)
+    additional_results[name] = {
+        'accuracy': accuracy,
+        'report': classification_report(y_test, y_pred, target_names=class_names)
+    }
+    print(f"{name} Accuracy: {accuracy:.4f}")
+    print(f"\n{name} Classification Report:")
+    print(additional_results[name]['report'])
+
 """## Save test data and model for later evaluation"""
-print("\nSaving test data and model...")
-np.save('X_test.npy', X_test)
-np.save('y_test.npy', y_test)
+np.save('Saved Data/X_test.npy', X_test)
+np.save('Saved Data/y_test.npy', y_test)
 print("Test data saved successfully")
 dump(svm, 'svm_model.joblib')
 print("model saved successfully")
