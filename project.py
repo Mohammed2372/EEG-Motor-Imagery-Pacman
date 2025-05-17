@@ -215,6 +215,7 @@ print(f"Total variance explained: {np.sum(pca.explained_variance_ratio_):.2%}")
 print("\nData shape after PCA:", pca_data.shape)
 print("Class distribution after PCA:")
 unique_labels, counts = np.unique(y_labels, return_counts=True)
+
 for label, count in zip(unique_labels, counts):
     print(f"Class {label}: {count} trials")
 
@@ -393,7 +394,7 @@ if cleaned_data.shape[1] != n_components_ica:
 print(f"Data shape before CSP: {cleaned_data.shape}")
 
 # Verify there are trials for each class
-for class_id in range(1, 5):  # Now checking all 4 classes
+for class_id in range(1, 5):
     n_trials = np.sum(y_labels == class_id)
     print(f"Number of trials for class {class_id}: {n_trials}")
 
