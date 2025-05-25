@@ -40,7 +40,9 @@ This project implements a Brain-Computer Interface (BCI) system that uses EEG si
 ## Current Progress and Challenges
 
 - Model accuracy is around 30%
-- Basic game mechanics are implemented
+- Basic game mechanics are implemented with two modes:
+     1. Prediction mode that makes Pacman play with the prediction moves of test data
+     2. Normal mode for the user to play
 
 ## Future Improvements
 
